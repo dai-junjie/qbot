@@ -5,6 +5,7 @@ __all__ = [
     "config",
     "parser",
     "plotter",
+    "ranker",
     "repository",
     "service",
 ]

@@ -21,6 +21,9 @@ def summarize(
     rank_202_score: int | None,
     rank_retest_score: int | None,
     retest_rank: int,
+    avg_top_202: float | None,
+    avg_top_263: float | None,
+    avg_top_273: float | None,
 ) -> str:
     if not buckets or valid_count == 0:
         return "本次无有效分数数据（仅统计 350-500 且格式为 分数-名字 / 分数—名字）。"
@@ -31,9 +34,9 @@ def summarize(
         "=== 群成员分数累计统计 ===",
         f"统计范围：350分及以上",
         f"有效样本：{valid_count}（{_trend_text(valid_count, prev_valid_count)}）",
-        f"复录比计算：202*1.3={202*1.3:.1f}，向上取整={retest_rank}",
+        f"复试线位次：第{retest_rank}名",
         f"关键位次：第202名={rank_202_score if rank_202_score is not None else '样本不足'}，"
-        f"第{retest_rank}名(202*1.3向上取整)={rank_retest_score if rank_retest_score is not None else '样本不足'}",
+        f"第{retest_rank}名={rank_retest_score if rank_retest_score is not None else '样本不足'}",
         "----------------------",
     ]
 
@@ -49,6 +52,17 @@ def summarize(
         lines.append(f"≥ {b.start}分: {cumulative}人 ({pct:.1f}%)")
         if retest_bucket_start is not None and b.start == retest_bucket_start:
             lines.append("-------------------------")
+
+    lines.append("----------------------")
+    lines.append(
+        f"前202均分：{avg_top_202:.2f}" if avg_top_202 is not None else "前202均分：样本不足"
+    )
+    lines.append(
+        f"前263均分：{avg_top_263:.2f}" if avg_top_263 is not None else "前263均分：样本不足"
+    )
+    lines.append(
+        f"前273均分：{avg_top_273:.2f}" if avg_top_273 is not None else "前273均分：样本不足"
+    )
 
     if valid_count < 5:
         lines.append("提醒：样本较少，解读需谨慎。")

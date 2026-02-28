@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="QBOT_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="QBOT_",
+        extra="ignore",
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
-    enabled_groups: list[int] = Field(default_factory=list)
+    enabled_groups: Annotated[list[str], NoDecode] = Field(default_factory=list)
     db_path: Path = Path("data/qbot.sqlite3")
     history_window_hours: int = 24
     retention_days: int = 30
@@ -17,14 +23,16 @@ class Settings(BaseSettings):
 
     @field_validator("enabled_groups", mode="before")
     @classmethod
-    def _parse_groups(cls, value: object) -> list[int]:
+    def _parse_groups(cls, value: object) -> list[str]:
         if value is None:
             return []
+        if isinstance(value, int):
+            return [str(value)]
         if isinstance(value, str):
             chunks = [p.strip() for p in value.split(",") if p.strip()]
-            return [int(part) for part in chunks]
+            return chunks
         if isinstance(value, list):
-            return [int(v) for v in value]
+            return [str(v).strip() for v in value if str(v).strip()]
         raise ValueError("QBOT_ENABLED_GROUPS must be comma separated string or list")
 
 

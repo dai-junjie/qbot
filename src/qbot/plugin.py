@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 from pathlib import Path
+import re
 from time import monotonic
+import unicodedata
 from zoneinfo import ZoneInfo
 
 from nonebot import get_driver, logger, on, on_message
@@ -44,6 +46,10 @@ def _image_segment_from_file(path: Path) -> MessageSegment:
     raw = path.read_bytes()
     b64 = base64.b64encode(raw).decode("ascii")
     return MessageSegment.image(f"base64://{b64}")
+
+
+def _is_group_allowed(group_id: int) -> bool:
+    return str(group_id) in set(settings.enabled_groups)
 
 
 async def _send_stat(bot: Bot, group_id: int) -> bool:
@@ -96,11 +102,26 @@ async def _send_stat(bot: Bot, group_id: int) -> bool:
 scorestat_msg = on_message(priority=10, block=True)
 scorestat_sent_msg = on("message_sent", priority=10, block=False)
 
+SCORESTAT_HELP_TEXT = (
+    "规则：\n"
+    "1) 仅统计群名片/昵称中 `分数-名字` 或 `分数—名字`\n"
+    "2) 分数范围 350-500\n"
+    "3) 5 分一档，从 350 起\n"
+    "4) 档位上限 min(500, 最高分+5)"
+)
+
+RANK_HELP_TEXT = (
+    "用法：`/rank`\n"
+    "功能：查询你自己的排名、百分位、是否在复试线上。\n"
+    "前提：你的名片/昵称必须是 `分数-名字` 或 `分数—名字`，且分数在 350-500。"
+)
+
 
 @driver.on_startup
 async def _on_startup() -> None:
     await repo.init()
     logger.info("qbot repository initialized at {}", settings.db_path)
+    logger.info("qbot enabled groups: {}", settings.enabled_groups)
 
     @scheduler.scheduled_job(
         "cron",
@@ -117,31 +138,48 @@ async def _on_startup() -> None:
             logger.warning("No active bot found for scheduled scorestat")
             return
         bot = bots[0]
-        for group_id in settings.enabled_groups:
+        for group_id_raw in settings.enabled_groups:
+            try:
+                group_id = int(group_id_raw)
+            except ValueError:
+                logger.warning("Skip invalid group id in QBOT_ENABLED_GROUPS: {}", group_id_raw)
+                continue
             await _send_stat(bot, group_id)
 
 
 @scorestat_msg.handle()
 async def _handle_scorestat(bot: Bot, event: GroupMessageEvent) -> None:
-    raw_text = event.get_plaintext().strip()
-    action = _parse_scorestat_action(raw_text)
-    if action is None:
+    allowed = _is_group_allowed(event.group_id)
+    if not allowed:
+        logger.info(
+            "Whitelist check: group_id={} allowed={}",
+            event.group_id,
+            allowed,
+        )
         return
 
+    raw_text = event.get_plaintext().strip()
+    parsed = _parse_bot_command(raw_text)
+    if parsed is None:
+        return
+    command, action = parsed
+
     logger.info(
-        "Received scorestat command from user {} in group {}",
+        "Received command {} {} from user {} in group {}",
+        command,
+        action,
         event.user_id,
         event.group_id,
     )
-    if action == "help":
-        await scorestat_msg.finish(
-            "规则：\n"
-            "1) 仅统计群名片/昵称中 `分数-名字` 或 `分数—名字`\n"
-            "2) 分数范围 350-500\n"
-            "3) 5 分一档，从 350 起\n"
-            "4) 档位上限 min(500, 最高分+5)"
-        )
-    await _run_scorestat_with_cooldown(bot, event.group_id, scorestat_msg)
+    await _handle_command(
+        bot=bot,
+        group_id=event.group_id,
+        user_id=event.user_id,
+        command=command,
+        action=action,
+        matcher=scorestat_msg,
+    )
+    logger.info("Whitelist check: group_id={} allowed={}", event.group_id, allowed)
 
 
 def _extract_plain_text_from_message_payload(message: object) -> str:
@@ -163,13 +201,57 @@ def _extract_plain_text_from_message_payload(message: object) -> str:
     return ""
 
 
-def _parse_scorestat_action(raw_text: str) -> str | None:
-    normalized = raw_text.strip().replace("／", "/").lower()
-    if normalized in {"/scorestat", "scorestat"}:
-        return "run"
-    if normalized in {"/scorestat help", "scorestat help"}:
-        return "help"
+def _parse_bot_command(raw_text: str) -> tuple[str, str] | None:
+    # Normalize full-width forms and strip invisible separators to improve
+    # command recognition from different clients/input methods.
+    normalized = unicodedata.normalize("NFKC", raw_text)
+    normalized = (
+        normalized.replace("\u200b", "")
+        .replace("\u200c", "")
+        .replace("\u200d", "")
+        .replace("\ufeff", "")
+        .strip()
+        .lower()
+    )
+    command_re = re.compile(r"^/?\s*(scorestat|rank)(?:\s+(help))?\s*$")
+    m = command_re.match(normalized)
+    if m:
+        command = m.group(1)
+        action = "help" if m.group(2) else "run"
+        return (command, action)
+    if normalized.startswith("/") or normalized.startswith("／"):
+        logger.info("Unrecognized slash command raw={!r} normalized={!r}", raw_text, normalized)
     return None
+
+
+async def _send_text(bot: Bot, group_id: int, text: str, matcher=None) -> None:
+    if matcher is not None:
+        await matcher.finish(text)
+    await bot.send_group_msg(group_id=group_id, message=text)
+
+
+async def _handle_command(
+    bot: Bot,
+    group_id: int,
+    user_id: int,
+    command: str,
+    action: str,
+    matcher=None,
+) -> None:
+    if command == "scorestat":
+        if action == "help":
+            await _send_text(bot, group_id, SCORESTAT_HELP_TEXT, matcher=matcher)
+            return
+        await _run_scorestat_with_cooldown(bot, group_id, matcher)
+        return
+
+    if command == "rank":
+        if action == "help":
+            await _send_text(bot, group_id, RANK_HELP_TEXT, matcher=matcher)
+            return
+        rank_result = await service.query_self_rank(bot, group_id, user_id)
+        await _send_text(bot, group_id, rank_result.text, matcher=matcher)
+        return
 
 
 async def _run_scorestat_with_cooldown(bot: Bot, group_id: int, matcher) -> None:
@@ -192,26 +274,37 @@ async def _handle_scorestat_self_sent(bot: Bot, event: Event) -> None:
     group_id = payload.get("group_id")
     if not isinstance(group_id, int):
         return
+    allowed = _is_group_allowed(group_id)
+    if not allowed:
+        logger.info(
+            "Whitelist check(self_sent): group_id={} allowed={}",
+            group_id,
+            allowed,
+        )
+        return
 
     raw_text = str(payload.get("raw_message") or "").strip()
     if not raw_text:
         raw_text = _extract_plain_text_from_message_payload(payload.get("message"))
 
-    action = _parse_scorestat_action(raw_text)
-    if action is None:
+    parsed = _parse_bot_command(raw_text)
+    if parsed is None:
         return
+    command, action = parsed
+    user_id = int(payload.get("user_id") or payload.get("self_id") or 0)
 
-    logger.info("Received self-sent scorestat command in group {}", group_id)
-    if action == "help":
-        await bot.send_group_msg(
-            group_id=group_id,
-            message=(
-                "规则：\n"
-                "1) 仅统计群名片/昵称中 `分数-名字` 或 `分数—名字`\n"
-                "2) 分数范围 350-500\n"
-                "3) 5 分一档，从 350 起\n"
-                "4) 档位上限 min(500, 最高分+5)"
-            ),
-        )
-        return
-    await _run_scorestat_with_cooldown(bot, group_id, scorestat_sent_msg)
+    logger.info(
+        "Received self-sent command {} {} in group {}",
+        command,
+        action,
+        group_id,
+    )
+    await _handle_command(
+        bot=bot,
+        group_id=group_id,
+        user_id=user_id,
+        command=command,
+        action=action,
+        matcher=scorestat_sent_msg,
+    )
+    logger.info("Whitelist check(self_sent): group_id={} allowed={}", group_id, allowed)
