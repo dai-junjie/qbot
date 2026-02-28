@@ -14,8 +14,19 @@ from nonebot.exception import ActionFailed
 from nonebot.plugin import require
 
 from qbot.config import settings
+from qbot.collector import get_group_members
+from qbot.ranker import rank_and_percentile
 from qbot.repository import ScoreRepository
 from qbot.service import ScoreStatService
+from qbot.setops import (
+    build_overlap_text,
+    collect_candidates,
+    is_zheji_candidate,
+    is_zheruan_candidate,
+    member_profile_text,
+    parse_zheji_score,
+    parse_zheruan_score,
+)
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -102,7 +113,7 @@ async def _send_stat(bot: Bot, group_id: int) -> bool:
 scorestat_msg = on_message(priority=10, block=True)
 scorestat_sent_msg = on("message_sent", priority=10, block=False)
 
-SCORESTAT_HELP_TEXT = (
+STAT_HELP_TEXT = (
     "规则：\n"
     "1) 仅统计群名片/昵称中 `分数-名字` 或 `分数—名字`\n"
     "2) 分数范围 350-500\n"
@@ -114,6 +125,36 @@ RANK_HELP_TEXT = (
     "用法：`/rank`\n"
     "功能：查询你自己的排名、百分位、是否在复试线上。\n"
     "前提：你的名片/昵称必须是 `分数-名字` 或 `分数—名字`，且分数在 350-500。"
+)
+
+RANK_COMP_HELP_TEXT = (
+    "用法：`/rank-comp`\n"
+    "功能：查询你在浙软与浙计两边的个人排名。\n"
+    "规则：\n"
+    "1) 浙软按 `分数-名字` 或 `分数—名字`\n"
+    "2) 浙计按 `26-专业-分数-名字`（默认用你在浙软的分数换算位次）\n"
+    "3) 分数范围 350-500"
+)
+
+SET_HELP_TEXT = (
+    "用法：`/set`\n"
+    "功能：对比浙软群(当前群)与浙计群的考生名单，按 QQ 检测重合。\n"
+    "筛选规则：\n"
+    "1) 浙软群：`分数-名字` 或 `分数—名字`，分数 350-500\n"
+    "2) 浙计群：`26-专业-分数-名字`，分数 350-500"
+)
+
+ALL_HELP_TEXT = (
+    "可用命令：\n"
+    "`/h`：查看本帮助\n"
+    "`/stat`：统计当前群分数分布（兼容 `/scorestat`）\n"
+    "`/stat help`：查看统计规则\n"
+    "`/rank`：查询你在浙软群的排名\n"
+    "`/rank help`：查看个人排名规则\n"
+    "`/rank-comp`：查询跨群排名对比\n"
+    "`/rank-comp help`：查看跨群排名规则\n"
+    "`/set`：查询浙软与浙计考生 QQ 重合\n"
+    "`/set help`：查看重合检测规则"
 )
 
 
@@ -213,7 +254,9 @@ def _parse_bot_command(raw_text: str) -> tuple[str, str] | None:
         .strip()
         .lower()
     )
-    command_re = re.compile(r"^/?\s*(scorestat|rank)(?:\s+(help))?\s*$")
+    command_re = re.compile(
+        r"^/?\s*(stat|scorestat|rank-comp|rank|set|h)(?:\s+(help))?\s*$"
+    )
     m = command_re.match(normalized)
     if m:
         command = m.group(1)
@@ -238,11 +281,15 @@ async def _handle_command(
     action: str,
     matcher=None,
 ) -> None:
-    if command == "scorestat":
+    if command in {"stat", "scorestat"}:
         if action == "help":
-            await _send_text(bot, group_id, SCORESTAT_HELP_TEXT, matcher=matcher)
+            await _send_text(bot, group_id, STAT_HELP_TEXT, matcher=matcher)
             return
         await _run_scorestat_with_cooldown(bot, group_id, matcher)
+        return
+
+    if command == "h":
+        await _send_text(bot, group_id, ALL_HELP_TEXT, matcher=matcher)
         return
 
     if command == "rank":
@@ -251,6 +298,20 @@ async def _handle_command(
             return
         rank_result = await service.query_self_rank(bot, group_id, user_id)
         await _send_text(bot, group_id, rank_result.text, matcher=matcher)
+        return
+
+    if command == "rank-comp":
+        if action == "help":
+            await _send_text(bot, group_id, RANK_COMP_HELP_TEXT, matcher=matcher)
+            return
+        await _run_rank_comp(bot, group_id, user_id, matcher)
+        return
+
+    if command == "set":
+        if action == "help":
+            await _send_text(bot, group_id, SET_HELP_TEXT, matcher=matcher)
+            return
+        await _run_set_overlap_check(bot, group_id, matcher)
         return
 
 
@@ -264,6 +325,99 @@ async def _run_scorestat_with_cooldown(bot: Bot, group_id: int, matcher) -> None
     ok = await _send_stat(bot, group_id)
     if not ok:
         await matcher.finish("统计执行失败（可能是群成员接口或图片发送失败），请查看 bot 日志。")
+
+
+async def _run_set_overlap_check(bot: Bot, group_id: int, matcher) -> None:
+    try:
+        local_members = await get_group_members(bot, group_id)
+        zheji_members = await get_group_members(bot, settings.zheji_group_id)
+    except Exception:
+        logger.exception("Set overlap check failed to fetch group member list")
+        await matcher.finish("名单查询失败，请检查 OneBot 接口和群可见性。")
+
+    local_candidates = collect_candidates(local_members, is_zheruan_candidate)
+    zheji_candidates = collect_candidates(zheji_members, is_zheji_candidate)
+    result = build_overlap_text(
+        local_group_id=group_id,
+        zheji_group_id=settings.zheji_group_id,
+        local_candidates=local_candidates,
+        zheji_candidates=zheji_candidates,
+    )
+    await _send_text(bot, group_id, result, matcher=matcher)
+
+
+def _compute_rank_stats(scores: list[int], own_score: int) -> tuple[int, int, int, float]:
+    sorted_scores = sorted(scores, reverse=True)
+    return rank_and_percentile(sorted_scores, own_score)
+
+
+def _collect_scores(members: list[dict], score_parser) -> list[int]:
+    scores: list[int] = []
+    for member in members:
+        profile = member_profile_text(member)
+        score = score_parser(profile)
+        if score is not None:
+            scores.append(score)
+    return scores
+
+
+def _extract_local_self_score(local_members: list[dict], user_id: int) -> tuple[int | None, str]:
+    self_found = False
+    self_profile = ""
+    self_score: int | None = None
+
+    for member in local_members:
+        uid = member.get("user_id")
+        if not isinstance(uid, int) or uid != user_id:
+            continue
+        self_found = True
+        self_profile = member_profile_text(member)
+        self_score = parse_zheruan_score(self_profile)
+        break
+
+    if not self_found:
+        return None, "浙软：未找到你的群成员记录。"
+    if self_score is None:
+        if not self_profile:
+            return None, "浙软：你的名片/昵称为空，无法计算。"
+        return None, "浙软：你的名片/昵称不符合格式（分数-名字）。"
+    return self_score, ""
+
+
+async def _run_rank_comp(bot: Bot, group_id: int, user_id: int, matcher) -> None:
+    try:
+        local_members = list(await get_group_members(bot, group_id))
+        zheji_members = list(await get_group_members(bot, settings.zheji_group_id))
+    except Exception:
+        logger.exception("Rank comp failed to fetch group member list")
+        await matcher.finish("查询失败：无法拉取群成员列表，请检查 OneBot 接口。")
+
+    self_score, self_score_error = _extract_local_self_score(local_members, user_id)
+    if self_score is None:
+        await _send_text(bot, group_id, "\n".join(["=== 跨群个人排名 ===", f"QQ：{user_id}", self_score_error]), matcher=matcher)
+        return
+
+    local_scores = _collect_scores(local_members, parse_zheruan_score)
+    zheji_scores = _collect_scores(zheji_members, parse_zheji_score)
+    if not local_scores:
+        await _send_text(bot, group_id, "浙软暂无有效考生样本，无法换算。", matcher=matcher)
+        return
+    if not zheji_scores:
+        await _send_text(bot, group_id, "浙计暂无有效考生样本，无法换算。", matcher=matcher)
+        return
+
+    local_best, _, local_tie, local_pct = _compute_rank_stats(local_scores, self_score)
+    zheji_best, _, zheji_tie, zheji_pct = _compute_rank_stats(zheji_scores, self_score)
+
+    table_lines = [
+        "=== 跨群个人排名 ===",
+        "学院 | 分数 | 位次 | 百分位",
+        f"浙软 | {self_score} | {local_best}/{len(local_scores)}(同分{local_tie}) | {local_pct:.1f}%",
+        f"浙计 | {self_score}* | {zheji_best}/{len(zheji_scores)}(同分{zheji_tie}) | {zheji_pct:.1f}%",
+        "* 浙计按浙软同分换算",
+    ]
+    text = "\n".join(table_lines)
+    await _send_text(bot, group_id, text, matcher=matcher)
 
 
 @scorestat_sent_msg.handle()

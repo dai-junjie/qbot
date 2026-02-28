@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     )
 
     enabled_groups: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    zheji_group_id: int = 924534632
     db_path: Path = Path("data/qbot.sqlite3")
     history_window_hours: int = 24
     retention_days: int = 30
