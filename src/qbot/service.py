@@ -10,7 +10,7 @@ from qbot.bucketizer import build_buckets
 from qbot.collector import get_group_members
 from qbot.models import BucketCount
 from qbot.parser import parse_member_card
-from qbot.plotter import render_bucket_chart, render_trend_chart
+from qbot.plotter import render_dashboard_chart
 from qbot.ranker import rank_and_percentile
 from qbot.repository import ScoreRepository
 
@@ -180,23 +180,17 @@ class ScoreStatService:
         output_dir = Path("data/charts") / str(group_id)
         stamp = snapshot.collected_at.strftime("%Y%m%d_%H%M%S")
 
-        bucket_path = render_bucket_chart(
-            output_path=output_dir / f"bucket_{stamp}.png",
-            buckets=buckets,
-            group_id=group_id,
-            collected_at=datetime.now(UTC),
-            font_path=self.font_path,
-        )
         trend_points = await self.repo.get_trend_points(group_id, self.history_window_hours)
-        trend_path = render_trend_chart(
-            output_path=output_dir / f"trend_{stamp}.png",
+        dashboard_path = render_dashboard_chart(
+            output_path=output_dir / f"dashboard_{stamp}.png",
+            buckets=buckets,
             points=trend_points,
             group_id=group_id,
+            collected_at=datetime.now(UTC),
             window_hours=self.history_window_hours,
             font_path=self.font_path,
         )
-
-        return StatResult(summary, bucket_path, trend_path, buckets)
+        return StatResult(summary, dashboard_path, None, buckets)
 
     async def query_self_rank(self, bot, group_id: int, user_id: int) -> RankResult:
         members = await get_group_members(bot, group_id)
@@ -242,11 +236,6 @@ class ScoreStatService:
         retest_score = (
             sorted_scores[retest_rank - 1] if valid_count >= retest_rank else None
         )
-        target_rank_score = (
-            sorted_scores[TARGET_RANK - 1] if valid_count >= TARGET_RANK else None
-        )
-        avg_top_202 = _avg_top_n(sorted_scores, TARGET_RANK)
-
         lines = [
             "=== 个人排名查询 ===",
             f"查询人：{self_display_name or user_id}",
@@ -269,13 +258,14 @@ class ScoreStatService:
             lines.append(f"复试线：第{retest_rank}名分数={retest_score}")
             lines.append(f"是否在复试线上：{in_line}")
 
-        lines.append("")
-        lines.extend(
-            _build_comeback_analysis(
-                own_score=own_score,
-                target_rank_score=target_rank_score,
-                avg_top_202=avg_top_202,
-            )
-        )
+        # Reverse-analysis module is temporarily disabled for /rank output.
+        # lines.append("")
+        # lines.extend(
+        #     _build_comeback_analysis(
+        #         own_score=own_score,
+        #         target_rank_score=target_rank_score,
+        #         avg_top_202=avg_top_202,
+        #     )
+        # )
 
         return RankResult("\n".join(lines))

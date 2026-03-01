@@ -93,3 +93,7 @@ ps -ef | grep -E 'qq --no-sandbox|python bot.py' | grep -v grep
 # 4) 看 bot 日志是否收到群消息
 # (按你的日志文件路径查看)
 ```
+
+## Visualization Text Rule
+- Use English only in generated chart text (titles, axis labels, legends, annotations).
+- Do not use Chinese labels in figures to avoid mixed-language regressions.
