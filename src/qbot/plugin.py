@@ -63,6 +63,12 @@ def _is_group_allowed(group_id: int) -> bool:
     return str(group_id) in set(settings.enabled_groups)
 
 
+def _normalize_usage_command(command: str) -> str:
+    if command == "scorestat":
+        return "stat"
+    return command
+
+
 async def _send_stat(bot: Bot, group_id: int) -> bool:
     lock = _get_lock(group_id)
     async with lock:
@@ -281,6 +287,22 @@ async def _handle_command(
     action: str,
     matcher=None,
 ) -> None:
+    try:
+        await repo.log_command_usage(
+            group_id=group_id,
+            user_id=user_id,
+            command=_normalize_usage_command(command),
+            action=action,
+        )
+    except Exception:
+        logger.exception(
+            "Command usage log failed: group_id={} user_id={} command={} action={}",
+            group_id,
+            user_id,
+            command,
+            action,
+        )
+
     if command in {"stat", "scorestat"}:
         if action == "help":
             await _send_text(bot, group_id, STAT_HELP_TEXT, matcher=matcher)

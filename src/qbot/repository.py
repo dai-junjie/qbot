@@ -37,6 +37,18 @@ class ScoreRepository:
 
                 CREATE INDEX IF NOT EXISTS idx_snapshots_group_time
                 ON score_snapshots(group_id, collected_at);
+
+                CREATE TABLE IF NOT EXISTS command_usage_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    command TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_cmd_usage_group_user_time
+                ON command_usage_logs(group_id, user_id, created_at);
                 """
             )
             await db.commit()
@@ -132,4 +144,47 @@ class ScoreRepository:
                 "DELETE FROM score_snapshots WHERE collected_at < ?",
                 (threshold.isoformat(),),
             )
+            await db.execute(
+                "DELETE FROM command_usage_logs WHERE created_at < ?",
+                (threshold.isoformat(),),
+            )
             await db.commit()
+
+    async def log_command_usage(
+        self,
+        group_id: int,
+        user_id: int,
+        command: str,
+        action: str,
+    ) -> None:
+        created_at = datetime.now(UTC).isoformat()
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                """
+                INSERT INTO command_usage_logs (
+                    group_id, user_id, command, action, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (group_id, user_id, command, action, created_at),
+            )
+            await db.commit()
+
+    async def get_command_usage_counts(
+        self,
+        group_id: int,
+        user_id: int,
+        action: str = "run",
+    ) -> list[tuple[str, int]]:
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT command, COUNT(*)
+                FROM command_usage_logs
+                WHERE group_id = ? AND user_id = ? AND action = ?
+                GROUP BY command
+                ORDER BY COUNT(*) DESC, command ASC
+                """,
+                (group_id, user_id, action),
+            )
+            rows = await cursor.fetchall()
+        return [(str(command), int(count)) for command, count in rows]
