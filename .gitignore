@@ -9,3 +9,7 @@
 data
 
 **/*.log
+
+# Large font files (download separately if needed)
+fonts/*.ttc
+fonts/*.ttf

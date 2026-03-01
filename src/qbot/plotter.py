@@ -89,15 +89,15 @@ def render_bucket_chart(
     collected_at_bj = _to_beijing(collected_at)
     fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(18, 6))
     fig.suptitle(
-        f"Group {group_id} Score Distribution ({collected_at_bj.strftime('%Y-%m-%d %H:%M')} BJT)",
+        f"群 {group_id} 分数分布 ({collected_at_bj.strftime('%Y-%m-%d %H:%M')} 北京时间)",
         fontsize=14,
     )
     fig.subplots_adjust(wspace=0.25)
 
     bars = ax_left.bar(labels, values, color="#2979FF", alpha=0.9)
-    ax_left.set_title("5-Point Bins: Count + Cumulative Rank")
-    ax_left.set_xlabel("Score Bin")
-    ax_left.set_ylabel("Count")
+    ax_left.set_title("5 分档：人数 + 累计排名")
+    ax_left.set_xlabel("分数段")
+    ax_left.set_ylabel("人数")
     ax_left.set_ylim(0, max(values + [0]) + 4)
     for bar, value in zip(bars, values, strict=False):
         ax_left.text(
@@ -111,14 +111,14 @@ def render_bucket_chart(
 
     ax_cum = ax_left.twinx()
     ax_cum.plot(labels, cumulative_ge, color="#D32F2F", marker="o", linewidth=1.5)
-    ax_cum.set_ylabel("Cumulative Rank (>= bin)")
+    ax_cum.set_ylabel("累计排名 (≥该档)")
     ax_cum.set_ylim(0, max(cumulative_ge + [0]) + 10)
     for i, cum in enumerate(cumulative_ge):
         ax_cum.text(i, cum + 2, str(cum), color="#B71C1C", ha="center", fontsize=7)
     ax_left.tick_params(axis="x", rotation=45, pad=8)
-    ax_left.set_xlabel("Score Bin", fontsize=10)
+    ax_left.set_xlabel("分数段", fontsize=10)
 
-    ax_right.set_title("10-Point Bins Donut (Temp-scaled Area, Raw % Labels)")
+    ax_right.set_title("10 分档环形图 (温度缩放面积，原始百分比)")
     if total > 0 and any(values_10):
         color_maps = ["tab20", "Set3", "Paired"]
         colors: list[tuple[float, float, float, float]] = []
@@ -163,7 +163,7 @@ def render_bucket_chart(
         ax_right.text(
             0,
             0,
-            f"Total\n{total}\nT={DONUT_TEMPERATURE:.1f}",
+            f"总计\n{total}\nT={DONUT_TEMPERATURE:.1f}",
             ha="center",
             va="center",
             fontsize=10,
@@ -172,7 +172,7 @@ def render_bucket_chart(
         )
         ax_right.set_aspect("equal")
     else:
-        ax_right.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax_right.transAxes)
+        ax_right.text(0.5, 0.5, "无数据", ha="center", va="center", transform=ax_right.transAxes)
         ax_right.axis("off")
 
     fig.tight_layout()
@@ -196,9 +196,9 @@ def render_trend_chart(
         xs = [_to_beijing(p[0]) for p in points]
         ys = [p[1] for p in points]
         ax.plot(xs, ys, marker="o", color="#00A86B")
-    ax.set_title(f"Group {group_id} Valid Members Trend (Last {window_hours}h, BJT)")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Valid Count")
+    ax.set_title(f"群 {group_id} 有效人数趋势 (最近{window_hours}小时)")
+    ax.set_xlabel("时间")
+    ax.set_ylabel("有效人数")
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     fig.autofmt_xdate()
     fig.tight_layout()
@@ -251,14 +251,14 @@ def render_dashboard_chart(
     ax_right = fig.add_subplot(gs[0, 1])
     ax_bottom = fig.add_subplot(gs[1, :])
     fig.suptitle(
-        f"Group {group_id} Statistical Dashboard ({collected_at_bj.strftime('%Y-%m-%d %H:%M')} BJT)",
+        f"群 {group_id} 统计看板 ({collected_at_bj.strftime('%Y-%m-%d %H:%M')} 北京时间)",
         fontsize=14,
     )
 
     bars = ax_left.bar(labels, values, color="#2979FF", alpha=0.9)
-    ax_left.set_title("5-Point Bins: Count + Cumulative Rank")
-    ax_left.set_xlabel("Score Bin")
-    ax_left.set_ylabel("Count")
+    ax_left.set_title("5 分档：人数 + 累计排名")
+    ax_left.set_xlabel("分数段")
+    ax_left.set_ylabel("人数")
     ax_left.set_ylim(0, max(values + [0]) + 4)
     for bar, value in zip(bars, values, strict=False):
         ax_left.text(
@@ -271,14 +271,14 @@ def render_dashboard_chart(
         )
     ax_cum = ax_left.twinx()
     ax_cum.plot(labels, cumulative_ge, color="#D32F2F", marker="o", linewidth=1.5)
-    ax_cum.set_ylabel("Cumulative Rank (>= bin)")
+    ax_cum.set_ylabel("累计排名 (≥该档)")
     ax_cum.set_ylim(0, max(cumulative_ge + [0]) + 10)
     for i, cum in enumerate(cumulative_ge):
         ax_cum.text(i, cum + 2, str(cum), color="#B71C1C", ha="center", fontsize=7)
     ax_left.tick_params(axis="x", rotation=35, pad=10, labelsize=9)
-    ax_left.set_xlabel("Score Bin", fontsize=10)
+    ax_left.set_xlabel("分数段", fontsize=10)
 
-    ax_right.set_title("10-Point Bins Donut (Temp-scaled Area, Raw % Labels)")
+    ax_right.set_title("10 分档环形图 (温度缩放面积，原始百分比)")
     if total > 0 and any(values_10):
         color_maps = ["tab20", "Set3", "Paired"]
         colors: list[tuple[float, float, float, float]] = []
@@ -320,7 +320,7 @@ def render_dashboard_chart(
         ax_right.text(
             0,
             0,
-            f"Total\n{total}\nT={DONUT_TEMPERATURE:.1f}",
+            f"总计\n{total}\nT={DONUT_TEMPERATURE:.1f}",
             ha="center",
             va="center",
             fontsize=10,
@@ -329,16 +329,16 @@ def render_dashboard_chart(
         )
         ax_right.set_aspect("equal")
     else:
-        ax_right.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax_right.transAxes)
+        ax_right.text(0.5, 0.5, "无数据", ha="center", va="center", transform=ax_right.transAxes)
         ax_right.axis("off")
 
     if points:
         xs = [_to_beijing(p[0]) for p in points]
         ys = [p[1] for p in points]
         ax_bottom.plot(xs, ys, marker="o", color="#00A86B")
-    ax_bottom.set_title(f"Valid Members Trend (Last {window_hours}h, BJT)")
-    ax_bottom.set_xlabel("Time")
-    ax_bottom.set_ylabel("Valid Count")
+    ax_bottom.set_title(f"有效人数趋势 (最近{window_hours}小时)")
+    ax_bottom.set_xlabel("时间")
+    ax_bottom.set_ylabel("有效人数")
     ax_bottom.yaxis.set_major_locator(MaxNLocator(integer=True))
     for label in ax_bottom.get_xticklabels():
         label.set_rotation(30)

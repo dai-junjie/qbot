@@ -128,8 +128,8 @@ STAT_HELP_TEXT = (
 )
 
 RANK_HELP_TEXT = (
-    "用法：`/rank`\n"
-    "功能：查询你自己的排名、百分位、是否在复试线上，并给出 202 线/202均分 机考追分分析。\n"
+    "用法：`/rank` 或 `/rank win`\n"
+    "功能：`/rank` 查询你自己的排名、百分位、是否在复试线上；`/rank win` 额外显示 202 线/202均分机考追分分析。\n"
     "前提：你的名片/昵称必须是 `分数-名字` 或 `分数—名字`，且分数在 350-500。"
 )
 
@@ -156,6 +156,7 @@ ALL_HELP_TEXT = (
     "`/stat`：统计当前群分数分布（兼容 `/scorestat`）\n"
     "`/stat help`：查看统计规则\n"
     "`/rank`：查询你在浙软群的排名\n"
+    "`/rank win`：在个人排名后附加机考追分分析\n"
     "`/rank help`：查看个人排名规则\n"
     "`/rank-comp`：查询跨群排名对比\n"
     "`/rank-comp help`：查看跨群排名规则\n"
@@ -261,12 +262,15 @@ def _parse_bot_command(raw_text: str) -> tuple[str, str] | None:
         .lower()
     )
     command_re = re.compile(
-        r"^/?\s*(stat|scorestat|rank-comp|rank|set|h)(?:\s+(help))?\s*$"
+        r"^/?\s*(stat|scorestat|rank-comp|rank|set|h)(?:\s+(help|win))?\s*$"
     )
     m = command_re.match(normalized)
     if m:
         command = m.group(1)
-        action = "help" if m.group(2) else "run"
+        action_token = m.group(2)
+        if action_token == "win" and command != "rank":
+            return None
+        action = action_token if action_token else "run"
         return (command, action)
     if normalized.startswith("/") or normalized.startswith("／"):
         logger.info("Unrecognized slash command raw={!r} normalized={!r}", raw_text, normalized)
@@ -318,7 +322,12 @@ async def _handle_command(
         if action == "help":
             await _send_text(bot, group_id, RANK_HELP_TEXT, matcher=matcher)
             return
-        rank_result = await service.query_self_rank(bot, group_id, user_id)
+        rank_result = await service.query_self_rank(
+            bot,
+            group_id,
+            user_id,
+            include_comeback=(action == "win"),
+        )
         await _send_text(bot, group_id, rank_result.text, matcher=matcher)
         return
 

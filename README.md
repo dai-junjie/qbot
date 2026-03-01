@@ -40,7 +40,27 @@ python bot.py
 - `QBOT_DB_PATH`（默认 `data/qbot.sqlite3`）
 - `QBOT_HISTORY_WINDOW_HOURS`（默认 `24`）
 - `QBOT_RETENTION_DAYS`（默认 `30`）
-- `QBOT_FONT_PATH`（可选，解决中文字体问题）
+- `QBOT_FONT_PATH`（可选，推荐设置以支持中文显示）
+
+### 中文字体配置
+
+图表中的中文显示需要配置字体：
+
+```env
+QBOT_FONT_PATH=fonts/NotoSansCJK-Regular.ttc
+```
+
+**字体获取方式：**
+
+1. **Linux 系统**（已安装 Noto CJK 字体）：
+   ```bash
+   mkdir -p fonts
+   cp /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc fonts/
+   ```
+
+2. **其他系统**：参考 `fonts/README.md` 下载字体文件
+
+3. **不配置**：图表将使用英文标签（默认行为）
 
 ## 命令
 

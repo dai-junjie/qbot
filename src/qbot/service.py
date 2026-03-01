@@ -192,7 +192,13 @@ class ScoreStatService:
         )
         return StatResult(summary, dashboard_path, None, buckets)
 
-    async def query_self_rank(self, bot, group_id: int, user_id: int) -> RankResult:
+    async def query_self_rank(
+        self,
+        bot,
+        group_id: int,
+        user_id: int,
+        include_comeback: bool = False,
+    ) -> RankResult:
         members = await get_group_members(bot, group_id)
 
         parsed_scores: list[int] = []
@@ -231,6 +237,10 @@ class ScoreStatService:
         best_rank, worst_rank, tie_count, percentile = rank_and_percentile(
             sorted_scores, own_score
         )
+        target_rank_score = (
+            sorted_scores[TARGET_RANK - 1] if valid_count >= TARGET_RANK else None
+        )
+        avg_top_202 = _avg_top_n(sorted_scores, TARGET_RANK)
 
         retest_rank = RETEST_RANK
         retest_score = (
@@ -258,14 +268,14 @@ class ScoreStatService:
             lines.append(f"复试线：第{retest_rank}名分数={retest_score}")
             lines.append(f"是否在复试线上：{in_line}")
 
-        # Reverse-analysis module is temporarily disabled for /rank output.
-        # lines.append("")
-        # lines.extend(
-        #     _build_comeback_analysis(
-        #         own_score=own_score,
-        #         target_rank_score=target_rank_score,
-        #         avg_top_202=avg_top_202,
-        #     )
-        # )
+        if include_comeback:
+            lines.append("")
+            lines.extend(
+                _build_comeback_analysis(
+                    own_score=own_score,
+                    target_rank_score=target_rank_score,
+                    avg_top_202=avg_top_202,
+                )
+            )
 
         return RankResult("\n".join(lines))
