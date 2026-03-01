@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from math import ceil
 from pathlib import Path
 
 from qbot.analyzer import summarize
@@ -28,12 +29,75 @@ class RankResult:
 
 
 RETEST_RANK = 263
+TARGET_RANK = 202
+
+# 2025浙软电子信息复试录取方案：
+# 综合成绩=初试总分/5*70% + 复试成绩*30%
+# 复试成绩=面试*80% + 机考*20%
+# 在“面试同分”假设下，初试1分差距需要约2.333分机考来弥补。
+WRITTEN_TO_CODING_RATIO = (0.7 / 5) / (0.3 * 0.2)
 
 
 def _avg_top_n(scores_desc: list[int], n: int) -> float | None:
     if len(scores_desc) < n:
         return None
     return sum(scores_desc[:n]) / n
+
+
+def _required_coding_delta_for_written_gap(written_gap: float) -> int:
+    if written_gap <= 0:
+        return 0
+    return ceil(written_gap * WRITTEN_TO_CODING_RATIO)
+
+
+def _build_comeback_analysis(
+    own_score: int,
+    target_rank_score: int | None,
+    avg_top_202: float | None,
+) -> list[str]:
+    lines = [
+        "=== 复试逆袭分析（按浙软2025口径）===",
+        "----------------------",
+        "[规则] 综合=初试/5×70% + 复试×30%",
+        "[规则] 复试=面试×80% + 机考×20%",
+        "[换算] 初试每落后1分 ≈ 机考多2.33分（面试同分假设）",
+        "----------------------",
+    ]
+
+    if target_rank_score is None:
+        lines.append("第202名分析：样本不足，暂无法估算冲刺空间。")
+    else:
+        gap_to_202 = target_rank_score - own_score
+        if gap_to_202 > 0:
+            need_202 = _required_coding_delta_for_written_gap(gap_to_202)
+            lines.append(
+                f"[202线] 目标初试{target_rank_score}，当前差{gap_to_202}分 -> 机考约+{need_202}分"
+            )
+        else:
+            room_202 = _required_coding_delta_for_written_gap(-gap_to_202)
+            lines.append(
+                f"[202线] 初试已不低于{target_rank_score} -> 机考约-{room_202}分仍可追平"
+            )
+
+    if avg_top_202 is None:
+        lines.append("前202均分追分：样本不足，暂无法估算。")
+    else:
+        gap_to_avg_202 = avg_top_202 - own_score
+        if gap_to_avg_202 > 0:
+            need_avg = _required_coding_delta_for_written_gap(gap_to_avg_202)
+            lines.append(
+                f"[202均分] 均分{avg_top_202:.2f}，当前差{gap_to_avg_202:.2f}分 -> 机考约+{need_avg}分"
+            )
+        else:
+            room_avg = _required_coding_delta_for_written_gap(-gap_to_avg_202)
+            lines.append(
+                f"[202均分] 初试已不低于{avg_top_202:.2f} -> 机考约-{room_avg}分仍可追平"
+            )
+
+    lines.append("----------------------")
+    lines.append("注：机考追分值不设上限，出现 100+ 属于目标难度提示。")
+    lines.append("说明：该估算仅用于策略参考，实际录取受面试、同分排序规则等因素影响。")
+    return lines
 
 
 class ScoreStatService:
@@ -68,6 +132,8 @@ class ScoreStatService:
                 prev_valid,
                 rank_202_score=None,
                 rank_retest_score=None,
+                rank_273_score=None,
+                rank_280_score=None,
                 retest_rank=RETEST_RANK,
                 avg_top_202=None,
                 avg_top_263=None,
@@ -91,6 +157,8 @@ class ScoreStatService:
         rank_retest_score = (
             sorted_scores[retest_rank - 1] if len(sorted_scores) >= retest_rank else None
         )
+        rank_273_score = sorted_scores[272] if len(sorted_scores) >= 273 else None
+        rank_280_score = sorted_scores[279] if len(sorted_scores) >= 280 else None
         avg_top_202 = _avg_top_n(sorted_scores, 202)
         avg_top_263 = _avg_top_n(sorted_scores, 263)
         avg_top_273 = _avg_top_n(sorted_scores, 273)
@@ -101,6 +169,8 @@ class ScoreStatService:
             prev_valid,
             rank_202_score=rank_202_score,
             rank_retest_score=rank_retest_score,
+            rank_273_score=rank_273_score,
+            rank_280_score=rank_280_score,
             retest_rank=retest_rank,
             avg_top_202=avg_top_202,
             avg_top_263=avg_top_263,
@@ -172,6 +242,10 @@ class ScoreStatService:
         retest_score = (
             sorted_scores[retest_rank - 1] if valid_count >= retest_rank else None
         )
+        target_rank_score = (
+            sorted_scores[TARGET_RANK - 1] if valid_count >= TARGET_RANK else None
+        )
+        avg_top_202 = _avg_top_n(sorted_scores, TARGET_RANK)
 
         lines = [
             "=== 个人排名查询 ===",
@@ -191,9 +265,17 @@ class ScoreStatService:
                 f"复试线判定：样本不足（有效样本 {valid_count} < {retest_rank}，暂无法判定）"
             )
         else:
-            # 按“同分最高位次”判定，等价于 own_score >= 复试线分数
             in_line = "是" if own_score >= retest_score else "否"
             lines.append(f"复试线：第{retest_rank}名分数={retest_score}")
             lines.append(f"是否在复试线上：{in_line}")
+
+        lines.append("")
+        lines.extend(
+            _build_comeback_analysis(
+                own_score=own_score,
+                target_rank_score=target_rank_score,
+                avg_top_202=avg_top_202,
+            )
+        )
 
         return RankResult("\n".join(lines))

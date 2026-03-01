@@ -9,6 +9,8 @@ def test_summarize_no_data() -> None:
         None,
         rank_202_score=None,
         rank_retest_score=None,
+        rank_273_score=None,
+        rank_280_score=None,
         retest_rank=263,
         avg_top_202=None,
         avg_top_263=None,
@@ -35,6 +37,8 @@ def test_summarize_with_delta() -> None:
         prev_valid_count=4,      # 上次有效样本数
         rank_202_score=None,     # 202位次分数
         rank_retest_score=None,  # 复试分数
+        rank_273_score=None,     # 273位次分数
+        rank_280_score=None,     # 280位次分数
         retest_rank=263,         # 复试线位次
         avg_top_202=None,        # 前202名平均分
         avg_top_263=None,
@@ -45,7 +49,10 @@ def test_summarize_with_delta() -> None:
     assert "=== 群成员分数累计统计 ===" in text  # 验证标题存在
     assert "有效样本：6（较上次增加 2 人。）" in text  # 验证样本数统计  # 验证复试线位次
     assert "复试线位次：第263名" in text
-    assert "关键位次：第202名=样本不足，第263名=样本不足" in text  # 验证关键位次
+    assert (
+        "关键位次：第202名=样本不足，第263名=样本不足，第273名=样本不足，第280名=样本不足"
+        in text
+    )  # 验证关键位次
     assert "较上次增加 2 人" in text  # 验证增量变化
     assert "≥ 360分: 2人 (33.3%)" in text  # 验证360分以上人数及占比
     assert "≥ 355分: 5人 (83.3%)" in text  # 验证355分以上人数及占比
@@ -68,6 +75,8 @@ def test_separator_after_retest_bucket() -> None:
         prev_valid_count=63,
         rank_202_score=None,
         rank_retest_score=362,
+        rank_273_score=None,
+        rank_280_score=None,
         retest_rank=263,
         avg_top_202=None,
         avg_top_263=None,

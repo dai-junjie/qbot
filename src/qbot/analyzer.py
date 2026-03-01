@@ -20,6 +20,8 @@ def summarize(
     prev_valid_count: int | None,
     rank_202_score: int | None,
     rank_retest_score: int | None,
+    rank_273_score: int | None,
+    rank_280_score: int | None,
     retest_rank: int,
     avg_top_202: float | None,
     avg_top_263: float | None,
@@ -36,7 +38,9 @@ def summarize(
         f"有效样本：{valid_count}（{_trend_text(valid_count, prev_valid_count)}）",
         f"复试线位次：第{retest_rank}名",
         f"关键位次：第202名={rank_202_score if rank_202_score is not None else '样本不足'}，"
-        f"第{retest_rank}名={rank_retest_score if rank_retest_score is not None else '样本不足'}",
+        f"第{retest_rank}名={rank_retest_score if rank_retest_score is not None else '样本不足'}，"
+        f"第273名={rank_273_score if rank_273_score is not None else '样本不足'}，"
+        f"第280名={rank_280_score if rank_280_score is not None else '样本不足'}",
         "----------------------",
     ]
 
